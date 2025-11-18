@@ -149,7 +149,7 @@ impl ProcessMonitor {
             smart_filter: false,
             only_groups: None,
             console: false,
-            verbose: self.verbose,
+            verbose: false, // Set to false to avoid infinite recursion in get_processes_on_ports
             docker: self.docker_enabled,
             show_pid: false,
             log_level: crate::cli::LogLevel::Info,
