@@ -23,7 +23,7 @@ echo 📦 Creating Windows-specific build configuration...
 (
 echo [package]
 echo name = "port-kill"
-echo version = "0.5.27"
+echo version = "0.5.28"
 echo edition = "2021"
 echo authors = ["Treadie ^<info@treadie.com^>"]
 echo description = "A CLI tool to help you find and free ports blocking your dev work, plus manage development caches"
