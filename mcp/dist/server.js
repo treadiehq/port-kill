@@ -15,7 +15,7 @@ if (!fs.existsSync(path.join(sdkDir, "dist", "cjs", "server", "mcp.js"))) {
 const { McpServer } = require(path.join(sdkDir, "dist", "cjs", "server", "mcp.js"));
 const { StdioServerTransport } = require(path.join(sdkDir, "dist", "cjs", "server", "stdio.js"));
 const { z } = require("zod");
-const { exec } = require("node:child_process");
+const { execFile } = require("node:child_process");
 const activeChildProcesses = new Set();
 const isWindows = process.platform === "win32";
 let _binPath = null;
@@ -34,9 +34,58 @@ function binPath() {
     }
     return _binPath;
 }
-function run(cmd, ctx) {
+/**
+ * Validate and sanitize input to prevent command injection.
+ * Only allows alphanumeric characters, commas, hyphens, dots, colons, and @ symbols.
+ */
+function sanitizeInput(input) {
+    if (!input)
+        return "";
+    // Whitelist: alphanumeric, comma, hyphen, dot, colon, @, underscore, forward slash
+    // This covers: ports (3000,8080), ranges (3000-4000), remote (user@host), paths
+    const sanitized = String(input).replace(/[^a-zA-Z0-9,\-.:@_\/]/g, "");
+    if (sanitized !== String(input)) {
+        console.error(`[security] Input sanitized: "${input}" -> "${sanitized}"`);
+    }
+    return sanitized;
+}
+/**
+ * Validate port input specifically - must be digits, commas, or hyphens only
+ */
+function validatePorts(ports) {
+    if (!ports)
+        return "";
+    const sanitized = String(ports).replace(/[^0-9,\-]/g, "");
+    if (sanitized !== String(ports)) {
+        throw new Error(`Invalid port specification: "${ports}". Only digits, commas, and hyphens allowed.`);
+    }
+    return sanitized;
+}
+/**
+ * Validate remote host input - must match user@host pattern
+ */
+function validateRemote(remote) {
+    if (!remote)
+        return "";
+    const trimmed = String(remote).trim();
+    if (trimmed === "")
+        return "";
+    // Pattern: optional user@ followed by hostname (alphanumeric, dots, hyphens)
+    const remotePattern = /^([a-zA-Z0-9_][a-zA-Z0-9_.-]*@)?[a-zA-Z0-9][a-zA-Z0-9.-]*$/;
+    if (!remotePattern.test(trimmed)) {
+        throw new Error(`Invalid remote specification: "${remote}". Expected format: user@host or hostname.`);
+    }
+    return trimmed;
+}
+/**
+ * Execute command safely using execFile (no shell interpretation).
+ * Arguments are passed as an array to prevent injection.
+ */
+function run(executable, args, ctx) {
+    // Filter out empty arguments
+    const cleanArgs = args.filter(arg => arg !== "" && arg !== undefined && arg !== null);
     return new Promise((resolve, reject) => {
-        const child = exec(cmd, {
+        const child = execFile(executable, cleanArgs, {
             cwd: process.env.PORT_KILL_CWD || process.cwd(),
             maxBuffer: 10 * 1024 * 1024
         });
@@ -147,94 +196,150 @@ async function invokeWithTimeout(name, args) {
     });
 }
 const handler = async (name, args, ctx) => {
+    const bin = binPath();
     switch (name) {
         case "list": {
-            const ports = args?.ports ? `--ports ${args.ports}` : "";
-            const docker = args?.docker ? "--docker" : "";
-            const verbose = args?.verbose ? "--verbose" : "";
-            const remote = args?.remote ? `--remote ${args.remote}` : "";
-            const cmd = `${binPath()} --console ${ports} ${docker} ${verbose} ${remote} --json`.trim();
-            const out = await run(cmd, ctx);
+            const cmdArgs = ["--console"];
+            if (args?.ports) {
+                const ports = validatePorts(args.ports);
+                if (ports)
+                    cmdArgs.push("--ports", ports);
+            }
+            if (args?.docker)
+                cmdArgs.push("--docker");
+            if (args?.verbose)
+                cmdArgs.push("--verbose");
+            if (args?.remote) {
+                const remote = validateRemote(args.remote);
+                if (remote)
+                    cmdArgs.push("--remote", remote);
+            }
+            cmdArgs.push("--json");
+            const out = await run(bin, cmdArgs, ctx);
             return { content: out };
         }
         case "kill": {
-            const remote = args?.remote ? `--remote ${args.remote}` : "";
-            const cmd = `${binPath()} --kill-all --ports ${args.ports} ${remote}`.trim();
-            const out = await run(cmd, ctx);
+            const ports = validatePorts(args?.ports);
+            if (!ports)
+                throw new Error("ports argument is required for kill");
+            const cmdArgs = ["--kill-all", "--ports", ports];
+            if (args?.remote) {
+                const remote = validateRemote(args.remote);
+                if (remote)
+                    cmdArgs.push("--remote", remote);
+            }
+            const out = await run(bin, cmdArgs, ctx);
             return { content: out };
         }
         case "reset": {
-            const remote = args?.remote ? `--remote ${args.remote}` : "";
-            const cmd = `${binPath()} --reset ${remote}`.trim();
-            const out = await run(cmd, ctx);
+            const cmdArgs = ["--reset"];
+            if (args?.remote) {
+                const remote = validateRemote(args.remote);
+                if (remote)
+                    cmdArgs.push("--remote", remote);
+            }
+            const out = await run(bin, cmdArgs, ctx);
             return { content: out };
         }
         case "audit": {
-            const ports = args?.ports ? `--ports ${args.ports}` : "";
-            const remote = args?.remote ? `--remote ${args.remote}` : "";
-            const suspicious = args?.suspiciousOnly ? "--suspicious-only" : "";
-            const cmd = `${binPath()} --audit ${suspicious} ${remote} ${ports} --json`.trim();
-            const out = await run(cmd, ctx);
+            const cmdArgs = ["--audit"];
+            if (args?.suspiciousOnly)
+                cmdArgs.push("--suspicious-only");
+            if (args?.remote) {
+                const remote = validateRemote(args.remote);
+                if (remote)
+                    cmdArgs.push("--remote", remote);
+            }
+            if (args?.ports) {
+                const ports = validatePorts(args.ports);
+                if (ports)
+                    cmdArgs.push("--ports", ports);
+            }
+            cmdArgs.push("--json");
+            const out = await run(bin, cmdArgs, ctx);
             return { content: out };
         }
         case "guardStatus": {
-            const baseUrl = args?.baseUrl || "http://localhost:3000";
+            const baseUrl = sanitizeInput(args?.baseUrl) || "http://localhost:3000";
+            // Validate URL format
+            try {
+                new URL(baseUrl);
+            }
+            catch {
+                throw new Error(`Invalid baseUrl: "${args?.baseUrl}"`);
+            }
             const resp = await fetch(`${baseUrl}/api/guard/status`);
             const json = await resp.json();
             return { content: JSON.stringify(json) };
         }
         case "cacheList": {
-            const lang = args?.lang || "auto";
-            const includeNpx = args?.includeNpx || false;
-            const includeJsPm = args?.includeJsPm || false;
-            const includeHf = args?.includeHf || false;
-            const includeTorch = args?.includeTorch || false;
-            const includeVercel = args?.includeVercel || false;
-            const includeCloudflare = args?.includeCloudflare || false;
-            const staleDays = args?.staleDays ? `--stale-days ${args.staleDays}` : "";
-            const npxFlag = includeNpx ? "--npx" : "";
-            const jsPmFlag = includeJsPm ? "--js-pm" : "";
-            const hfFlag = includeHf ? "--hf" : "";
-            const torchFlag = includeTorch ? "--torch" : "";
-            const vercelFlag = includeVercel ? "--vercel" : "";
-            const cloudflareFlag = includeCloudflare ? "--cloudflare" : "";
-            const langFlag = lang !== "auto" ? `--lang ${lang}` : "";
-            const cmd = `${binPath()} cache --list ${npxFlag} ${jsPmFlag} ${hfFlag} ${torchFlag} ${vercelFlag} ${cloudflareFlag} ${langFlag} ${staleDays} --json`.trim();
-            const out = await run(cmd, ctx);
+            const cmdArgs = ["cache", "--list"];
+            if (args?.includeNpx)
+                cmdArgs.push("--npx");
+            if (args?.includeJsPm)
+                cmdArgs.push("--js-pm");
+            if (args?.includeHf)
+                cmdArgs.push("--hf");
+            if (args?.includeTorch)
+                cmdArgs.push("--torch");
+            if (args?.includeVercel)
+                cmdArgs.push("--vercel");
+            if (args?.includeCloudflare)
+                cmdArgs.push("--cloudflare");
+            if (args?.lang && args.lang !== "auto") {
+                const lang = sanitizeInput(args.lang);
+                if (lang)
+                    cmdArgs.push("--lang", lang);
+            }
+            if (args?.staleDays) {
+                const days = parseInt(String(args.staleDays), 10);
+                if (Number.isFinite(days) && days > 0) {
+                    cmdArgs.push("--stale-days", String(days));
+                }
+            }
+            cmdArgs.push("--json");
+            const out = await run(bin, cmdArgs, ctx);
             return { content: out };
         }
         case "cacheClean": {
-            const lang = args?.lang || "auto";
-            const includeNpx = args?.includeNpx || false;
-            const includeJsPm = args?.includeJsPm || false;
-            const includeHf = args?.includeHf || false;
-            const includeTorch = args?.includeTorch || false;
-            const includeVercel = args?.includeVercel || false;
-            const includeCloudflare = args?.includeCloudflare || false;
-            const safeDelete = args?.safeDelete !== false; // default true
-            const force = args?.force || false;
-            const staleDays = args?.staleDays ? `--stale-days ${args.staleDays}` : "";
-            const npxFlag = includeNpx ? "--npx" : "";
-            const jsPmFlag = includeJsPm ? "--js-pm" : "";
-            const hfFlag = includeHf ? "--hf" : "";
-            const torchFlag = includeTorch ? "--torch" : "";
-            const vercelFlag = includeVercel ? "--vercel" : "";
-            const cloudflareFlag = includeCloudflare ? "--cloudflare" : "";
-            const langFlag = lang !== "auto" ? `--lang ${lang}` : "";
-            const safeFlag = safeDelete ? "--safe-delete" : "";
-            const forceFlag = force ? "--force" : "";
-            const cmd = `${binPath()} cache --clean ${npxFlag} ${jsPmFlag} ${hfFlag} ${torchFlag} ${vercelFlag} ${cloudflareFlag} ${langFlag} ${safeFlag} ${forceFlag} ${staleDays} --json`.trim();
-            const out = await run(cmd, ctx);
+            const cmdArgs = ["cache", "--clean"];
+            if (args?.includeNpx)
+                cmdArgs.push("--npx");
+            if (args?.includeJsPm)
+                cmdArgs.push("--js-pm");
+            if (args?.includeHf)
+                cmdArgs.push("--hf");
+            if (args?.includeTorch)
+                cmdArgs.push("--torch");
+            if (args?.includeVercel)
+                cmdArgs.push("--vercel");
+            if (args?.includeCloudflare)
+                cmdArgs.push("--cloudflare");
+            if (args?.lang && args.lang !== "auto") {
+                const lang = sanitizeInput(args.lang);
+                if (lang)
+                    cmdArgs.push("--lang", lang);
+            }
+            if (args?.safeDelete !== false)
+                cmdArgs.push("--safe-delete");
+            if (args?.force)
+                cmdArgs.push("--force");
+            if (args?.staleDays) {
+                const days = parseInt(String(args.staleDays), 10);
+                if (Number.isFinite(days) && days > 0) {
+                    cmdArgs.push("--stale-days", String(days));
+                }
+            }
+            cmdArgs.push("--json");
+            const out = await run(bin, cmdArgs, ctx);
             return { content: out };
         }
         case "cacheRestore": {
-            const cmd = `${binPath()} cache --restore-last --json`.trim();
-            const out = await run(cmd, ctx);
+            const out = await run(bin, ["cache", "--restore-last", "--json"], ctx);
             return { content: out };
         }
         case "cacheDoctor": {
-            const cmd = `${binPath()} cache --doctor --json`.trim();
-            const out = await run(cmd, ctx);
+            const out = await run(bin, ["cache", "--doctor", "--json"], ctx);
             return { content: out };
         }
         default:
@@ -244,7 +349,7 @@ const handler = async (name, args, ctx) => {
 // Create MCP server with proper tool registration
 const server = new McpServer({
     name: "port-kill-mcp",
-    version: "0.1.0"
+    version: "0.1.1"
 });
 // Register each tool individually with proper Zod schemas
 server.registerTool("list", {
