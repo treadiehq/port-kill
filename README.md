@@ -19,12 +19,11 @@ Join our Discord community for discussions, support, and updates:
 ## Install
 
 ```bash
-# macOS/Linux (release installer)
-curl -fsSL https://raw.githubusercontent.com/treadiehq/port-kill/main/install-release.sh | bash
+# macOS/Linux
+curl -fsSL portkill.com/install | bash
 
 # Windows (PowerShell or CMD)
-curl.exe -L "https://raw.githubusercontent.com/treadiehq/port-kill/main/install-release.bat" -o install-release.bat
-.\\install-release.bat
+curl -fsSL portkill.com/install-windows -o install.bat && install.bat
 ```
 
 **Windows users:** After installation, you MUST restart your terminal completely for PATH changes to take effect.
