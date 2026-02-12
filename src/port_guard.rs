@@ -534,24 +534,35 @@ impl PortGuardDaemon {
 
     /// Extract port number from command arguments
     fn extract_port_from_command(&self, _command: &str, args: &[String]) -> Option<u16> {
-        // Look for port patterns in arguments
-        for arg in args {
-            // Look for --port, -p, --listen, -l flags
-            if arg.starts_with("--port=") || arg.starts_with("-p=") {
-                if let Some(port_str) = arg.split('=').nth(1) {
-                    if let Ok(port) = port_str.parse::<u16>() {
+        // Flags whose next argument is a port number
+        const PORT_FLAGS: &[&str] = &["--port", "-p", "--listen", "-l"];
+
+        let mut i = 0;
+        while i < args.len() {
+            let arg = &args[i];
+
+            // Handle --port=3000 or -p=3000 or --listen=8080 or -l=8080
+            for flag in PORT_FLAGS {
+                let prefix = format!("{}=", flag);
+                if arg.starts_with(&prefix) {
+                    if let Some(port_str) = arg.split('=').nth(1) {
+                        if let Ok(port) = port_str.parse::<u16>() {
+                            return Some(port);
+                        }
+                    }
+                }
+            }
+
+            // Handle --port 3000 or -p 3000 (flag followed by value as next arg)
+            if PORT_FLAGS.contains(&arg.as_str()) {
+                if let Some(next_arg) = args.get(i + 1) {
+                    if let Ok(port) = next_arg.parse::<u16>() {
                         return Some(port);
                     }
                 }
             }
 
-            // Look for standalone port numbers
-            if let Ok(port) = arg.parse::<u16>() {
-                if port > 1024 {
-                    // Valid port range (u16 max is 65535)
-                    return Some(port);
-                }
-            }
+            i += 1;
         }
 
         None

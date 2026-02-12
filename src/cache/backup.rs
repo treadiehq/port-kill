@@ -223,12 +223,29 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), std::io::Error> {
     fs::create_dir_all(dst)?;
     for entry in fs::read_dir(src)? {
         let entry = entry?;
-        let entry_path = entry.path();
+        let file_type = entry.file_type()?;
         let dest_path = dst.join(entry.file_name());
-        if entry_path.is_dir() {
-            copy_dir_recursive(&entry_path, &dest_path)?;
+
+        if file_type.is_symlink() {
+            // Preserve symbolic links as links instead of following them
+            let target = fs::read_link(entry.path())?;
+            #[cfg(unix)]
+            {
+                std::os::unix::fs::symlink(&target, &dest_path)?;
+            }
+            #[cfg(windows)]
+            {
+                // Windows requires knowing if target is a directory or file
+                if entry.path().is_dir() {
+                    std::os::windows::fs::symlink_dir(&target, &dest_path)?;
+                } else {
+                    std::os::windows::fs::symlink_file(&target, &dest_path)?;
+                }
+            }
+        } else if file_type.is_dir() {
+            copy_dir_recursive(&entry.path(), &dest_path)?;
         } else {
-            fs::copy(&entry_path, &dest_path)?;
+            fs::copy(entry.path(), &dest_path)?;
         }
     }
     Ok(())

@@ -91,13 +91,7 @@ impl ConsolePortKillApp {
 
     /// Get ports to scan, using smart defaults when no ports are specified
     fn get_ports_to_scan(args: &Args) -> Vec<u16> {
-        if args.ports.is_some() || (args.start_port != 2000 || args.end_port != 6000) {
-            // Use the user-specified ports (either --ports or --start-port/--end-port)
-            args.get_ports_to_monitor()
-        } else {
-            // No ports specified, use common development ports to avoid hanging
-            vec![3000, 3001, 5000, 8000, 8080, 9000]
-        }
+        args.get_ports_to_monitor()
     }
 
     /// Create a temporary process monitor with smart port selection

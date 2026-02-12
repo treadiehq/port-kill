@@ -67,9 +67,10 @@ pub fn print_table(rows: &[(String, String, String, String, String)]) {
 
     // Data rows
     for (package, kind, size, last, stale) in rows {
-        // Truncate package name if too long
-        let display_package = if package.len() > package_width {
-            format!("{}...", &package[..package_width - 3])
+        // Truncate package name if too long (character-aware to avoid panic on Unicode)
+        let display_package = if package.chars().count() > package_width {
+            let truncated: String = package.chars().take(package_width - 3).collect();
+            format!("{}...", truncated)
         } else {
             package.clone()
         };

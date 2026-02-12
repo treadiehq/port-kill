@@ -286,75 +286,56 @@ pub fn detect_python_caches() -> Vec<CacheEntry> {
     let mut entries = Vec::new();
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
-    // __pycache__ directories
-    if let Ok(walker) = walkdir::WalkDir::new(&cwd)
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()
-    {
-        for entry in walker {
-            if entry.path().is_dir() && entry.file_name() == "__pycache__" {
-                let (size, mtime) = dir_size_and_mtime(entry.path());
-                entries.push(CacheEntry {
-                    id: format!("python:pycache:{}", entry.path().to_string_lossy()),
-                    kind: "python".to_string(),
-                    name: "__pycache__".to_string(),
-                    path: entry.path().to_string_lossy().to_string(),
-                    size_bytes: size,
-                    last_used_at: mtime,
-                    stale: false,
-                    details: json!({
-                        "type": "pycache"
-                    }),
-                });
-            }
+    // Scan once and check for all Python cache types, skipping permission errors
+    for entry in walkdir::WalkDir::new(&cwd).into_iter().flatten() {
+        if !entry.path().is_dir() {
+            continue;
         }
-    }
 
-    // .venv directories
-    if let Ok(walker) = walkdir::WalkDir::new(&cwd)
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()
-    {
-        for entry in walker {
-            if entry.path().is_dir() && entry.file_name() == ".venv" {
-                let (size, mtime) = dir_size_and_mtime(entry.path());
-                entries.push(CacheEntry {
-                    id: format!("python:venv:{}", entry.path().to_string_lossy()),
-                    kind: "python".to_string(),
-                    name: "Python virtual environment".to_string(),
-                    path: entry.path().to_string_lossy().to_string(),
-                    size_bytes: size,
-                    last_used_at: mtime,
-                    stale: false,
-                    details: json!({
-                        "type": "venv"
-                    }),
-                });
-            }
-        }
-    }
+        let dir_name = entry.file_name();
 
-    // .pytest_cache directories
-    if let Ok(walker) = walkdir::WalkDir::new(&cwd)
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()
-    {
-        for entry in walker {
-            if entry.path().is_dir() && entry.file_name() == ".pytest_cache" {
-                let (size, mtime) = dir_size_and_mtime(entry.path());
-                entries.push(CacheEntry {
-                    id: format!("python:pytest:{}", entry.path().to_string_lossy()),
-                    kind: "python".to_string(),
-                    name: "pytest cache".to_string(),
-                    path: entry.path().to_string_lossy().to_string(),
-                    size_bytes: size,
-                    last_used_at: mtime,
-                    stale: false,
-                    details: json!({
-                        "type": "pytest_cache"
-                    }),
-                });
-            }
+        if dir_name == "__pycache__" {
+            let (size, mtime) = dir_size_and_mtime(entry.path());
+            entries.push(CacheEntry {
+                id: format!("python:pycache:{}", entry.path().to_string_lossy()),
+                kind: "python".to_string(),
+                name: "__pycache__".to_string(),
+                path: entry.path().to_string_lossy().to_string(),
+                size_bytes: size,
+                last_used_at: mtime,
+                stale: false,
+                details: json!({
+                    "type": "pycache"
+                }),
+            });
+        } else if dir_name == ".venv" {
+            let (size, mtime) = dir_size_and_mtime(entry.path());
+            entries.push(CacheEntry {
+                id: format!("python:venv:{}", entry.path().to_string_lossy()),
+                kind: "python".to_string(),
+                name: "Python virtual environment".to_string(),
+                path: entry.path().to_string_lossy().to_string(),
+                size_bytes: size,
+                last_used_at: mtime,
+                stale: false,
+                details: json!({
+                    "type": "venv"
+                }),
+            });
+        } else if dir_name == ".pytest_cache" {
+            let (size, mtime) = dir_size_and_mtime(entry.path());
+            entries.push(CacheEntry {
+                id: format!("python:pytest:{}", entry.path().to_string_lossy()),
+                kind: "python".to_string(),
+                name: "pytest cache".to_string(),
+                path: entry.path().to_string_lossy().to_string(),
+                size_bytes: size,
+                last_used_at: mtime,
+                stale: false,
+                details: json!({
+                    "type": "pytest_cache"
+                }),
+            });
         }
     }
 
@@ -365,65 +346,56 @@ pub fn detect_java_caches() -> Vec<CacheEntry> {
     let mut entries = Vec::new();
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
-    // .gradle directories
-    if let Ok(walker) = walkdir::WalkDir::new(&cwd)
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()
-    {
-        for entry in walker {
-            if entry.path().is_dir() && entry.file_name() == ".gradle" {
+    // Scan once and check for all Java cache types, skipping permission errors
+    for entry in walkdir::WalkDir::new(&cwd).into_iter().flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
+
+        let dir_name = entry.file_name();
+
+        if dir_name == ".gradle" {
+            let (size, mtime) = dir_size_and_mtime(entry.path());
+            entries.push(CacheEntry {
+                id: format!("java:gradle:{}", entry.path().to_string_lossy()),
+                kind: "java".to_string(),
+                name: "Gradle cache".to_string(),
+                path: entry.path().to_string_lossy().to_string(),
+                size_bytes: size,
+                last_used_at: mtime,
+                stale: false,
+                details: json!({
+                    "type": "gradle_cache"
+                }),
+            });
+        } else if dir_name == "build" {
+            // Check if this is a Java build directory by looking for Java-specific files
+            let has_java_files = walkdir::WalkDir::new(entry.path()).into_iter().any(|e| {
+                if let Ok(e) = e {
+                    e.path()
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(|ext| ext == "class" || ext == "jar")
+                        .unwrap_or(false)
+                } else {
+                    false
+                }
+            });
+
+            if has_java_files {
                 let (size, mtime) = dir_size_and_mtime(entry.path());
                 entries.push(CacheEntry {
-                    id: format!("java:gradle:{}", entry.path().to_string_lossy()),
+                    id: format!("java:build:{}", entry.path().to_string_lossy()),
                     kind: "java".to_string(),
-                    name: "Gradle cache".to_string(),
+                    name: "Java build cache".to_string(),
                     path: entry.path().to_string_lossy().to_string(),
                     size_bytes: size,
                     last_used_at: mtime,
                     stale: false,
                     details: json!({
-                        "type": "gradle_cache"
+                        "type": "build_cache"
                     }),
                 });
-            }
-        }
-    }
-
-    // build directories (only if they contain Java-related files)
-    if let Ok(walker) = walkdir::WalkDir::new(&cwd)
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()
-    {
-        for entry in walker {
-            if entry.path().is_dir() && entry.file_name() == "build" {
-                // Check if this is a Java build directory by looking for Java-specific files
-                let has_java_files = walkdir::WalkDir::new(entry.path()).into_iter().any(|e| {
-                    if let Ok(e) = e {
-                        e.path()
-                            .extension()
-                            .and_then(|ext| ext.to_str())
-                            .map(|ext| ext == "class" || ext == "jar")
-                            .unwrap_or(false)
-                    } else {
-                        false
-                    }
-                });
-
-                if has_java_files {
-                    let (size, mtime) = dir_size_and_mtime(entry.path());
-                    entries.push(CacheEntry {
-                        id: format!("java:build:{}", entry.path().to_string_lossy()),
-                        kind: "java".to_string(),
-                        name: "Java build cache".to_string(),
-                        path: entry.path().to_string_lossy().to_string(),
-                        size_bytes: size,
-                        last_used_at: mtime,
-                        stale: false,
-                        details: json!({
-                            "type": "build_cache"
-                        }),
-                    });
-                }
             }
         }
     }

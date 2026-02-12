@@ -289,6 +289,10 @@ impl ProcessMonitor {
             filter.filter_processes(&mut processes);
         }
 
+        // Update internal state so that subsequent operations (kill, restart, history)
+        // have access to the most recent process metadata
+        self.current_processes = processes.clone();
+
         Ok(processes)
     }
 

@@ -113,8 +113,10 @@ impl FileMonitor {
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn find_processes_with_extension_unix(&self, extension: &str) -> Result<Vec<ProcessInfo>> {
-        // Use lsof with pattern matching
-        let output = Command::new("lsof").arg("+D").arg(".").output()?;
+        // Use lsof in machine-readable format (-F pfn) to reliably parse output
+        // Search from filesystem root instead of hardcoded current directory
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let output = Command::new("lsof").arg("+D").arg(&cwd).output()?;
 
         if !output.status.success() {
             return Ok(vec![]);
@@ -126,8 +128,9 @@ impl FileMonitor {
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn find_processes_with_pattern_unix(&self, pattern: &str) -> Result<Vec<ProcessInfo>> {
-        // Use lsof with pattern matching
-        let output = Command::new("lsof").arg("+D").arg(".").output()?;
+        // Use lsof to find processes with files matching a pattern
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let output = Command::new("lsof").arg("+D").arg(&cwd).output()?;
 
         if !output.status.success() {
             return Ok(vec![]);
@@ -281,29 +284,42 @@ impl FileMonitor {
         extension: &str,
     ) -> Result<Vec<ProcessInfo>> {
         let mut processes = Vec::new();
+        let mut seen_pids = std::collections::HashSet::new();
+        let ext_suffix = if extension.starts_with('.') {
+            extension.to_string()
+        } else {
+            format!(".{}", extension)
+        };
 
         for line in output.lines().skip(1) {
             // Skip header
-            if line.contains(extension) {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 2 {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            // lsof output: COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME
+            // NAME is the last column (index 8+), may contain spaces
+            if parts.len() >= 9 {
+                // Extract the NAME column (everything from column 8 onwards to handle spaces in paths)
+                let name_col = parts[8..].join(" ");
+                if name_col.ends_with(&ext_suffix) {
                     if let Ok(pid) = parts[1].parse::<i32>() {
-                        let name = parts[0].to_string();
-                        processes.push(ProcessInfo {
-                            pid,
-                            name: name.clone(),
-                            port: 0,
-                            command: name,
-                            container_id: None,
-                            container_name: None,
-                            command_line: Some(String::new()),
-                            working_directory: None,
-                            process_group: None,
-                            project_name: None,
-                            cpu_usage: None,
-                            memory_usage: None,
-                            memory_percentage: None,
-                        });
+                        // Deduplicate by PID
+                        if seen_pids.insert(pid) {
+                            let name = parts[0].to_string();
+                            processes.push(ProcessInfo {
+                                pid,
+                                name: name.clone(),
+                                port: 0,
+                                command: name,
+                                container_id: None,
+                                container_name: None,
+                                command_line: Some(String::new()),
+                                working_directory: None,
+                                process_group: None,
+                                project_name: None,
+                                cpu_usage: None,
+                                memory_usage: None,
+                                memory_percentage: None,
+                            });
+                        }
                     }
                 }
             }
@@ -318,29 +334,36 @@ impl FileMonitor {
         pattern: &str,
     ) -> Result<Vec<ProcessInfo>> {
         let mut processes = Vec::new();
+        let mut seen_pids = std::collections::HashSet::new();
 
         for line in output.lines().skip(1) {
             // Skip header
-            if line.contains(pattern) {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 2 {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            // lsof output: COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME
+            if parts.len() >= 9 {
+                // Match only against the NAME column (file path), not the entire line
+                let name_col = parts[8..].join(" ");
+                if name_col.contains(pattern) {
                     if let Ok(pid) = parts[1].parse::<i32>() {
-                        let name = parts[0].to_string();
-                        processes.push(ProcessInfo {
-                            pid,
-                            name: name.clone(),
-                            port: 0,
-                            command: name,
-                            container_id: None,
-                            container_name: None,
-                            command_line: Some(String::new()),
-                            working_directory: None,
-                            process_group: None,
-                            project_name: None,
-                            cpu_usage: None,
-                            memory_usage: None,
-                            memory_percentage: None,
-                        });
+                        // Deduplicate by PID
+                        if seen_pids.insert(pid) {
+                            let name = parts[0].to_string();
+                            processes.push(ProcessInfo {
+                                pid,
+                                name: name.clone(),
+                                port: 0,
+                                command: name,
+                                container_id: None,
+                                container_name: None,
+                                command_line: Some(String::new()),
+                                working_directory: None,
+                                process_group: None,
+                                project_name: None,
+                                cpu_usage: None,
+                                memory_usage: None,
+                                memory_percentage: None,
+                            });
+                        }
                     }
                 }
             }
