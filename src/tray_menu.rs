@@ -5,7 +5,7 @@ use log::debug;
 use std::collections::HashMap;
 #[cfg(target_os = "macos")]
 use tray_icon::{
-    menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem},
+    menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem},
     Icon,
 };
 
@@ -80,8 +80,7 @@ impl TrayMenu {
         let mut menu_id_to_port = HashMap::new();
 
         // Add "Kill All Processes" item
-        let kill_all_item = MenuItem::new("Kill All Processes", true, None);
-        let _kill_all_id = kill_all_item.id();
+        let kill_all_item = MenuItem::with_id(MenuId("kill_all".into()), "Kill All Processes", true, None);
         menu.append(&kill_all_item)?;
 
         // Add separator
@@ -103,7 +102,7 @@ impl TrayMenu {
                 }
 
                 if let Some(ref work_dir) = process_info.working_directory {
-                    parts.push(format!("- {}", work_dir));
+                    parts.push(format!("- {}", Self::short_display_path(work_dir)));
                 }
 
                 if let (Some(_container_id), Some(container_name)) =
@@ -145,11 +144,19 @@ impl TrayMenu {
         }
 
         // Add "Quit" item
-        let quit_item = MenuItem::new("Quit", true, None);
-        let _quit_id = quit_item.id();
+        let quit_item = MenuItem::with_id(MenuId("quit".into()), "Quit", true, None);
         menu.append(&quit_item)?;
 
         Ok((menu, menu_id_to_port))
+    }
+
+    fn short_display_path(dir: &str) -> String {
+        let parts: Vec<&str> = dir.split('/').collect();
+        if parts.len() >= 2 {
+            parts[parts.len() - 2..].join("/")
+        } else {
+            dir.to_string()
+        }
     }
 
     pub fn create_icon(text: &str) -> Result<Icon> {

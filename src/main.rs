@@ -196,6 +196,9 @@ fn main() -> Result<()> {
                 .unwrap()
                 .block_on(restore_last_backup());
             print_or_json(&resp, c.json);
+            if resp.error.is_some() {
+                std::process::exit(1);
+            }
             return Ok(());
         }
         if c.doctor {

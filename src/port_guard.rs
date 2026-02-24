@@ -126,13 +126,16 @@ impl PortGuardDaemon {
 
     /// Check for port conflicts and resolve them
     async fn check_port_conflicts(&self) -> Result<()> {
+        let effective_ports = self.effective_watched_ports().await;
+
         let mut monitor = self.process_monitor.lock().await;
         let processes = monitor.scan_processes().await?;
+        drop(monitor);
 
         // Group processes by port
         let mut port_processes: HashMap<u16, Vec<&ProcessInfo>> = HashMap::new();
         for process in processes.values() {
-            if self.watched_ports.contains(&process.port) {
+            if effective_ports.contains(&process.port) {
                 port_processes
                     .entry(process.port)
                     .or_insert_with(Vec::new)
@@ -144,16 +147,16 @@ impl PortGuardDaemon {
 
         // Check for conflicts
         for (port, processes) in port_processes {
-            let allowed_processes: Vec<&ProcessInfo> = match self.allowed_process_name.as_deref() {
-                Some(allowed_name) => processes
+            let allowed_name = self.allowed_name_for_port(port).await;
+            let allowed_processes: Vec<&ProcessInfo> = match allowed_name.as_deref() {
+                Some(name) => processes
                     .into_iter()
-                    .filter(|process| process.name == allowed_name)
+                    .filter(|process| process.name == name)
                     .collect(),
                 None => processes,
             };
 
             if allowed_processes.len() > 1 {
-                // Multiple processes on the same port - this is a conflict
                 let conflict = PortConflict {
                     port,
                     existing_process: allowed_processes[0].clone(),
@@ -167,7 +170,6 @@ impl PortGuardDaemon {
                     port, conflict.existing_process.name, conflict.new_process.name
                 );
 
-                // Resolve the conflict
                 if let Err(e) = self.resolve_conflict(conflict).await {
                     warn!("Failed to resolve port conflict: {}", e);
                 }
@@ -185,14 +187,10 @@ impl PortGuardDaemon {
         // Get currently running processes
         let processes = monitor.scan_processes().await?;
         
-        // Collect all ports that need restarting (similar to cleanup_expired_reservations pattern)
+        // Collect all ports that need restarting
         let mut ports_to_restart = Vec::new();
         
         for (port, reservation) in reservations.iter() {
-            if !self.watched_ports.contains(port) {
-                continue;
-            }
-            
             // Check if this port has a running process
             let has_process = processes.contains_key(port);
             
@@ -460,7 +458,8 @@ impl PortGuardDaemon {
             let target_port = self.extract_port_from_command(command, args);
 
             if let Some(port) = target_port {
-                if self.watched_ports.contains(&port) {
+                let effective_ports = self.effective_watched_ports().await;
+                if effective_ports.contains(&port) {
                     info!(
                         "🔍 Intercepting command: {} - checking port {}",
                         command, port
@@ -572,17 +571,19 @@ impl PortGuardDaemon {
     async fn resolve_port_conflict(&self, port: u16) -> Result<()> {
         let mut monitor = self.process_monitor.lock().await;
         let processes = monitor.scan_processes().await?;
+        drop(monitor);
 
         // Find processes using the port
         let conflicting_processes: Vec<&ProcessInfo> =
             processes.values().filter(|p| p.port == port).collect();
 
         if !conflicting_processes.is_empty() {
-            let process_to_kill = match self.allowed_process_name.as_deref() {
-                Some(allowed_name) => conflicting_processes
+            let allowed_name = self.allowed_name_for_port(port).await;
+            let process_to_kill = match allowed_name.as_deref() {
+                Some(name) => conflicting_processes
                     .iter()
                     .copied()
-                    .find(|process| process.name != allowed_name)
+                    .find(|process| process.name != name)
                     .unwrap_or(conflicting_processes[0]),
                 None => conflicting_processes[0],
             };
@@ -641,13 +642,14 @@ impl PortGuardDaemon {
         &self,
         port_processes: &HashMap<u16, Vec<&ProcessInfo>>,
     ) -> Result<()> {
-        let allowed_name = match self.allowed_process_name.as_deref() {
-            Some(name) => name,
-            None => return Ok(()),
-        };
-
         let mut disallowed_processes = Vec::new();
         for (port, processes) in port_processes {
+            let allowed_name = self.allowed_name_for_port(*port).await;
+            let allowed_name = match allowed_name.as_deref() {
+                Some(name) => name,
+                None => continue,
+            };
+
             for process in processes {
                 if process.name != allowed_name {
                     disallowed_processes.push((*port, process.pid, process.name.clone()));
@@ -679,6 +681,25 @@ impl PortGuardDaemon {
         }
 
         Ok(())
+    }
+
+    /// Returns the effective set of watched ports: the initial list merged with all reserved ports.
+    async fn effective_watched_ports(&self) -> HashSet<u16> {
+        let mut ports: HashSet<u16> = self.watched_ports.iter().copied().collect();
+        let reservations = self.reservations.lock().await;
+        ports.extend(reservations.keys());
+        ports
+    }
+
+    /// Returns the allowed process name for a specific port, checking reservations first,
+    /// then falling back to the global allowed_process_name.
+    async fn allowed_name_for_port(&self, port: u16) -> Option<String> {
+        let reservations = self.reservations.lock().await;
+        if let Some(reservation) = reservations.get(&port) {
+            Some(reservation.process_name.clone())
+        } else {
+            self.allowed_process_name.clone()
+        }
     }
 
     /// Get intercepted commands count

@@ -184,6 +184,9 @@ async fn main() -> Result<()> {
         if c.restore_last {
             let resp = restore_last_backup().await;
             print_or_json(&resp, c.json);
+            if resp.error.is_some() {
+                std::process::exit(1);
+            }
             return Ok(());
         }
         if c.doctor {

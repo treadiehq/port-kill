@@ -45,16 +45,16 @@ pub fn detect_rust_caches(root: &Path) -> Vec<CacheEntry> {
         });
     }
 
-    // ~/.cargo
+    // ~/.cargo/registry (downloaded crate sources and indices — safe to delete)
     if let Ok(home) = std::env::var("HOME") {
-        let cargo = PathBuf::from(home).join(".cargo");
-        if cargo.exists() {
-            let (size, mtime) = dir_size_and_mtime(&cargo);
+        let cargo_registry = PathBuf::from(home).join(".cargo/registry");
+        if cargo_registry.exists() {
+            let (size, mtime) = dir_size_and_mtime(&cargo_registry);
             entries.push(CacheEntry {
-                id: "rust:user-cargo".to_string(),
+                id: "rust:cargo-registry".to_string(),
                 kind: "rust".to_string(),
-                name: "Cargo cache".to_string(),
-                path: cargo.to_string_lossy().to_string(),
+                name: "Cargo registry cache".to_string(),
+                path: cargo_registry.to_string_lossy().to_string(),
                 size_bytes: size,
                 last_used_at: mtime,
                 stale: false,
@@ -286,57 +286,39 @@ pub fn detect_python_caches() -> Vec<CacheEntry> {
     let mut entries = Vec::new();
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
-    // Scan once and check for all Python cache types, skipping permission errors
-    for entry in walkdir::WalkDir::new(&cwd).into_iter().flatten() {
+    let mut it = walkdir::WalkDir::new(&cwd).into_iter();
+    while let Some(result) = it.next() {
+        let entry = match result {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
         if !entry.path().is_dir() {
             continue;
         }
 
         let dir_name = entry.file_name();
-
-        if dir_name == "__pycache__" {
-            let (size, mtime) = dir_size_and_mtime(entry.path());
-            entries.push(CacheEntry {
-                id: format!("python:pycache:{}", entry.path().to_string_lossy()),
-                kind: "python".to_string(),
-                name: "__pycache__".to_string(),
-                path: entry.path().to_string_lossy().to_string(),
-                size_bytes: size,
-                last_used_at: mtime,
-                stale: false,
-                details: json!({
-                    "type": "pycache"
-                }),
-            });
+        let (cache_type, cache_name) = if dir_name == "__pycache__" {
+            ("pycache", "__pycache__")
         } else if dir_name == ".venv" {
-            let (size, mtime) = dir_size_and_mtime(entry.path());
-            entries.push(CacheEntry {
-                id: format!("python:venv:{}", entry.path().to_string_lossy()),
-                kind: "python".to_string(),
-                name: "Python virtual environment".to_string(),
-                path: entry.path().to_string_lossy().to_string(),
-                size_bytes: size,
-                last_used_at: mtime,
-                stale: false,
-                details: json!({
-                    "type": "venv"
-                }),
-            });
+            ("venv", "Python virtual environment")
         } else if dir_name == ".pytest_cache" {
-            let (size, mtime) = dir_size_and_mtime(entry.path());
-            entries.push(CacheEntry {
-                id: format!("python:pytest:{}", entry.path().to_string_lossy()),
-                kind: "python".to_string(),
-                name: "pytest cache".to_string(),
-                path: entry.path().to_string_lossy().to_string(),
-                size_bytes: size,
-                last_used_at: mtime,
-                stale: false,
-                details: json!({
-                    "type": "pytest_cache"
-                }),
-            });
-        }
+            ("pytest_cache", "pytest cache")
+        } else {
+            continue;
+        };
+
+        let (size, mtime) = dir_size_and_mtime(entry.path());
+        entries.push(CacheEntry {
+            id: format!("python:{}:{}", cache_type, entry.path().to_string_lossy()),
+            kind: "python".to_string(),
+            name: cache_name.to_string(),
+            path: entry.path().to_string_lossy().to_string(),
+            size_bytes: size,
+            last_used_at: mtime,
+            stale: false,
+            details: json!({ "type": cache_type }),
+        });
+        it.skip_current_dir();
     }
 
     entries
@@ -346,8 +328,12 @@ pub fn detect_java_caches() -> Vec<CacheEntry> {
     let mut entries = Vec::new();
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
-    // Scan once and check for all Java cache types, skipping permission errors
-    for entry in walkdir::WalkDir::new(&cwd).into_iter().flatten() {
+    let mut it = walkdir::WalkDir::new(&cwd).into_iter();
+    while let Some(result) = it.next() {
+        let entry = match result {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
         if !entry.path().is_dir() {
             continue;
         }
@@ -364,12 +350,10 @@ pub fn detect_java_caches() -> Vec<CacheEntry> {
                 size_bytes: size,
                 last_used_at: mtime,
                 stale: false,
-                details: json!({
-                    "type": "gradle_cache"
-                }),
+                details: json!({ "type": "gradle_cache" }),
             });
+            it.skip_current_dir();
         } else if dir_name == "build" {
-            // Check if this is a Java build directory by looking for Java-specific files
             let has_java_files = walkdir::WalkDir::new(entry.path()).into_iter().any(|e| {
                 if let Ok(e) = e {
                     e.path()
@@ -392,30 +376,27 @@ pub fn detect_java_caches() -> Vec<CacheEntry> {
                     size_bytes: size,
                     last_used_at: mtime,
                     stale: false,
-                    details: json!({
-                        "type": "build_cache"
-                    }),
+                    details: json!({ "type": "build_cache" }),
                 });
+                it.skip_current_dir();
             }
         }
     }
 
-    // Maven cache (~/.m2)
+    // Maven local repository (~/.m2/repository) — downloaded artifacts, safe to delete
     if let Ok(home) = std::env::var("HOME") {
-        let maven_cache = PathBuf::from(home).join(".m2");
-        if maven_cache.exists() {
-            let (size, mtime) = dir_size_and_mtime(&maven_cache);
+        let maven_repo = PathBuf::from(home).join(".m2/repository");
+        if maven_repo.exists() {
+            let (size, mtime) = dir_size_and_mtime(&maven_repo);
             entries.push(CacheEntry {
-                id: "maven:cache".to_string(),
+                id: "maven:repository".to_string(),
                 kind: "java".to_string(),
-                name: "Maven cache".to_string(),
-                path: maven_cache.to_string_lossy().to_string(),
+                name: "Maven repository cache".to_string(),
+                path: maven_repo.to_string_lossy().to_string(),
                 size_bytes: size,
                 last_used_at: mtime,
                 stale: false,
-                details: json!({
-                    "type": "maven_cache"
-                }),
+                details: json!({ "type": "maven_repository" }),
             });
         }
     }
@@ -429,7 +410,6 @@ pub fn detect_hf_caches() -> Vec<CacheEntry> {
     if let Ok(home) = std::env::var("HOME") {
         let home_path = PathBuf::from(home);
 
-        // Hugging Face cache directory
         let hf_cache = home_path.join(".cache/huggingface");
         if hf_cache.exists() {
             let (size, mtime) = dir_size_and_mtime(&hf_cache);
@@ -441,27 +421,7 @@ pub fn detect_hf_caches() -> Vec<CacheEntry> {
                 size_bytes: size,
                 last_used_at: mtime,
                 stale: false,
-                details: json!({
-                    "type": "hf_cache"
-                }),
-            });
-        }
-
-        // Transformers cache
-        let transformers_cache = home_path.join(".cache/torch/transformers");
-        if transformers_cache.exists() {
-            let (size, mtime) = dir_size_and_mtime(&transformers_cache);
-            entries.push(CacheEntry {
-                id: "hf:transformers".to_string(),
-                kind: "hf".to_string(),
-                name: "Transformers cache".to_string(),
-                path: transformers_cache.to_string_lossy().to_string(),
-                size_bytes: size,
-                last_used_at: mtime,
-                stale: false,
-                details: json!({
-                    "type": "transformers_cache"
-                }),
+                details: json!({ "type": "hf_cache" }),
             });
         }
     }
@@ -475,7 +435,6 @@ pub fn detect_torch_caches() -> Vec<CacheEntry> {
     if let Ok(home) = std::env::var("HOME") {
         let home_path = PathBuf::from(home);
 
-        // PyTorch cache directory
         let torch_cache = home_path.join(".cache/torch");
         if torch_cache.exists() {
             let (size, mtime) = dir_size_and_mtime(&torch_cache);
@@ -487,27 +446,7 @@ pub fn detect_torch_caches() -> Vec<CacheEntry> {
                 size_bytes: size,
                 last_used_at: mtime,
                 stale: false,
-                details: json!({
-                    "type": "torch_cache"
-                }),
-            });
-        }
-
-        // PyTorch hub cache
-        let hub_cache = home_path.join(".cache/torch/hub");
-        if hub_cache.exists() {
-            let (size, mtime) = dir_size_and_mtime(&hub_cache);
-            entries.push(CacheEntry {
-                id: "torch:hub".to_string(),
-                kind: "torch".to_string(),
-                name: "PyTorch Hub cache".to_string(),
-                path: hub_cache.to_string_lossy().to_string(),
-                size_bytes: size,
-                last_used_at: mtime,
-                stale: false,
-                details: json!({
-                    "type": "torch_hub_cache"
-                }),
+                details: json!({ "type": "torch_cache" }),
             });
         }
     }

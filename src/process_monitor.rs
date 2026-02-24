@@ -122,14 +122,12 @@ impl ProcessMonitor {
         info!("Starting process monitoring on {}", port_description);
 
         loop {
+            let old_processes = self.current_processes.clone();
             match self.scan_processes().await {
                 Ok(processes) => {
-                    let update = ProcessUpdate::new(processes.clone());
-
-                    // Check if there are any changes
-                    if self.current_processes != processes {
+                    if old_processes != processes {
+                        let update = ProcessUpdate::new(processes.clone());
                         info!("Process update: {} processes found", update.count);
-                        self.current_processes = processes;
 
                         if let Err(e) = self.update_sender.send(update) {
                             error!("Failed to send process update: {}", e);
@@ -598,9 +596,7 @@ impl ProcessMonitor {
                         let dir = &line[1..]; // Remove the 'n' prefix
                         log::debug!("Found directory line for PID {}: '{}'", pid, dir);
                         if !dir.is_empty() && dir != "/" {
-                            // Truncate the directory path to show only the last part
-                            let truncated_dir = Self::truncate_directory_path(dir);
-                            working_directory = Some(truncated_dir);
+                            working_directory = Some(dir.to_string());
                             log::debug!(
                                 "Verbose info for PID {}: working_directory = {}",
                                 pid,
@@ -855,13 +851,31 @@ impl ProcessMonitor {
             .find(|p| p.pid == pid)
             .cloned();
 
-        // Save to restart manager if we have command line and working directory
+        // Save to restart manager — fetch verbose info on demand if not already available
         if let Some(ref proc_info) = process_info {
-            if let (Some(ref cmd_line), Some(ref work_dir)) = (&proc_info.command_line, &proc_info.working_directory) {
+            let mut cmd_line = proc_info.command_line.clone();
+            let mut work_dir = proc_info.working_directory.clone();
+
+            if cmd_line.is_none() || work_dir.is_none() {
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let (cl, wd) = self.get_process_verbose_info(proc_info.pid).await;
+                    if cmd_line.is_none() { cmd_line = cl; }
+                    if work_dir.is_none() { work_dir = wd; }
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    let (cl, wd) = self.get_process_verbose_info_windows(proc_info.pid).await;
+                    if cmd_line.is_none() { cmd_line = cl; }
+                    if work_dir.is_none() { work_dir = wd; }
+                }
+            }
+
+            if let (Some(ref cl), Some(ref wd)) = (&cmd_line, &work_dir) {
                 if let Err(e) = self.restart_manager.save_process_for_restart(
                     proc_info.port,
-                    cmd_line,
-                    work_dir
+                    cl,
+                    wd
                 ) {
                     warn!("Failed to save restart info for port {}: {}", proc_info.port, e);
                 }

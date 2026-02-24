@@ -48,4 +48,6 @@ pub struct CleanResponse {
 pub struct RestoreResponse {
     pub restored_from: String,
     pub restored_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }

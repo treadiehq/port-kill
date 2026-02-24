@@ -7,12 +7,14 @@ pub async fn restore_last_backup() -> RestoreResponse {
             Ok(count) => RestoreResponse {
                 restored_from: backup_path.to_string_lossy().to_string(),
                 restored_count: count,
+                error: None,
             },
             Err(e) => {
                 eprintln!("Error restoring backup: {}", e);
                 RestoreResponse {
-                    restored_from: String::new(),
+                    restored_from: backup_path.to_string_lossy().to_string(),
                     restored_count: 0,
+                    error: Some(format!("Failed to restore from backup: {}", e)),
                 }
             }
         },
@@ -21,6 +23,7 @@ pub async fn restore_last_backup() -> RestoreResponse {
             RestoreResponse {
                 restored_from: String::new(),
                 restored_count: 0,
+                error: Some("No backup found to restore".to_string()),
             }
         }
         Err(e) => {
@@ -28,6 +31,7 @@ pub async fn restore_last_backup() -> RestoreResponse {
             RestoreResponse {
                 restored_from: String::new(),
                 restored_count: 0,
+                error: Some(format!("Failed to find backup: {}", e)),
             }
         }
     }

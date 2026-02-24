@@ -121,24 +121,19 @@ impl PortKillApp {
                             // Since the tray-icon crate uses internal IDs, we'll use a different approach
                             // We'll check if this is a known special menu ID first
                             
-                            if menu_id == "0" {
-                                // "Kill All Processes" clicked
+                            if menu_id == "kill_all" {
                                 info!("Kill All Processes clicked, killing all processes...");
                                 let ports_to_kill = args_clone.get_ports_to_monitor();
                                 Self::kill_all_processes(&ports_to_kill, &args_clone)
-                            } else if menu_id == "1" {
-                                // "Quit" clicked - just exit gracefully without killing processes
+                            } else if menu_id == "quit" {
                                 info!("Quit clicked, exiting gracefully...");
-                                // Exit the application gracefully without killing processes
                                 std::process::exit(0);
                             } else {
                                 // For individual process clicks, use the menu ID mapping
                                 info!("Individual process clicked (ID: {}), looking up port...", menu_id);
                                 
-                                // Get the menu ID to port mapping
                                 if let Ok(menu_id_guard) = menu_id_to_port_clone.lock() {
                                     if let Some(&port) = menu_id_guard.get(&menu_id) {
-                                        // Found the port for this menu ID, kill the specific process
                                         if let Some(process_info) = processes.get(&port) {
                                             info!("Killing specific process on port {} with PID {}", port, process_info.pid);
                                             Self::kill_single_process(process_info, &args_clone)
@@ -147,10 +142,8 @@ impl PortKillApp {
                                             Ok(())
                                         }
                                     } else {
-                                        // Menu ID not found in mapping, kill all processes as fallback
-                                        info!("Menu ID {} not found in mapping, killing all processes as fallback...", menu_id);
-                                        let ports_to_kill = args_clone.get_ports_to_monitor();
-                                        Self::kill_all_processes(&ports_to_kill, &args_clone)
+                                        warn!("Menu ID {} not found in mapping, ignoring", menu_id);
+                                        Ok(())
                                     }
                                 } else {
                                     error!("Failed to access menu ID mapping");

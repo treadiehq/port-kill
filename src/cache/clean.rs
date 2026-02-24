@@ -22,62 +22,52 @@ pub async fn clean_caches(
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
     let mut entries = Vec::new();
-
-    // If specific flags are provided, only use those
-    if include_npx
+    let has_specialized_flags = include_npx
         || include_js_pm
         || include_hf
         || include_torch
         || include_vercel
-        || include_cloudflare
-    {
-        // NPX caches
-        if include_npx {
-            entries.extend(detect_npx_caches(stale_days));
-        }
+        || include_cloudflare;
 
-        // JS Package Manager caches
-        if include_js_pm {
-            entries.extend(detect_js_pm_caches());
-        }
+    // Specialized integrations
+    if include_npx {
+        entries.extend(detect_npx_caches(stale_days));
+    }
+    if include_js_pm {
+        entries.extend(detect_js_pm_caches());
+    }
+    if include_hf {
+        entries.extend(detect_hf_caches());
+    }
+    if include_torch {
+        entries.extend(detect_torch_caches());
+    }
+    if include_vercel {
+        entries.extend(detect_vercel_caches());
+    }
+    if include_cloudflare {
+        entries.extend(detect_cloudflare_caches());
+    }
 
-        // Specialized integrations
-        if include_hf {
-            entries.extend(detect_hf_caches());
-        }
-
-        if include_torch {
-            entries.extend(detect_torch_caches());
-        }
-
-        if include_vercel {
-            entries.extend(detect_vercel_caches());
-        }
-
-        if include_cloudflare {
-            entries.extend(detect_cloudflare_caches());
-        }
-    } else {
-        // Use language-based detection
-        // Rust caches
+    // Language-based detection (always runs unless only specialized flags were given)
+    if !has_specialized_flags || lang != "auto" {
         if lang == "auto" || lang == "rust" {
             entries.extend(detect_rust_caches(Path::new(&cwd)));
         }
-
-        // JavaScript/TypeScript caches
         if lang == "auto" || lang == "js" {
             entries.extend(detect_js_caches(Path::new(&cwd)));
         }
-
-        // Python caches
         if lang == "auto" || lang == "py" {
             entries.extend(detect_python_caches());
         }
-
-        // Java caches
         if lang == "auto" || lang == "java" {
             entries.extend(detect_java_caches());
         }
+    }
+
+    // Only delete stale entries when stale_days filtering is requested
+    if stale_days.is_some() {
+        entries.retain(|e| e.stale);
     }
 
     match safe_delete_entries(&entries, safe_delete).await {

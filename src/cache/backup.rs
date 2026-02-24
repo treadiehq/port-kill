@@ -59,10 +59,9 @@ pub async fn safe_delete_entries(
                         Ok(()) => deleted.push(entry.clone()),
                         Err(e) => {
                             eprintln!(
-                                "Warning: Failed to remove original after backup {}: {}",
-                                entry.path, e
+                                "Warning: Failed to remove original after backup {}: {}. Backup preserved at {}",
+                                entry.path, e, dst.display()
                             );
-                            let _ = remove_dir_or_file(&dst);
                         }
                     },
                     Err(e) => {
@@ -115,15 +114,10 @@ pub fn find_latest_backup() -> Result<Option<PathBuf>, std::io::Error> {
 
     let mut entries: Vec<_> = fs::read_dir(&backup_dir)?
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_dir())
+        .filter(|e| e.path().is_dir() && e.path().join("manifest.json").exists())
         .collect();
 
-    entries.sort_by_key(|e| {
-        e.metadata()
-            .ok()
-            .and_then(|m| m.modified().ok())
-            .unwrap_or(std::time::UNIX_EPOCH)
-    });
+    entries.sort_by_key(|e| e.file_name());
 
     Ok(entries.last().map(|e| e.path()))
 }
@@ -176,7 +170,23 @@ pub async fn restore_from_backup(backup_path: &Path) -> Result<usize, std::io::E
 }
 
 fn copy_dir_or_file(src: &Path, dst: &Path) -> Result<(), std::io::Error> {
-    if src.is_dir() {
+    let meta = fs::symlink_metadata(src)?;
+    if meta.is_symlink() {
+        let target = fs::read_link(src)?;
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&target, dst)?;
+        }
+        #[cfg(windows)]
+        {
+            if src.is_dir() {
+                std::os::windows::fs::symlink_dir(&target, dst)?;
+            } else {
+                std::os::windows::fs::symlink_file(&target, dst)?;
+            }
+        }
+        Ok(())
+    } else if meta.is_dir() {
         prepare_directory_destination(dst)?;
         copy_dir_recursive(src, dst)
     } else {

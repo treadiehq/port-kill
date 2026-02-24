@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Child, Command};
+use std::thread;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RestartInfo {
@@ -82,10 +83,10 @@ impl RestartManager {
         Ok(())
     }
 
-    /// Restart a process on a specific port
-    /// Returns the PID of the spawned process. The child process is detached
-    /// to prevent zombie process accumulation.
-    pub fn restart_port(&self, port: u16) -> Result<u32> {
+    /// Restart a process on a specific port.
+    /// Returns the PID of the spawned process. A background reaper thread
+    /// ensures the child is waited on so it doesn't become a zombie.
+    pub fn restart_port(&mut self, port: u16) -> Result<u32> {
         let restart_info = self
             .restart_info
             .get(&port)
@@ -97,13 +98,20 @@ impl RestartManager {
             restart_info.command
         );
 
-        let child = self.execute_restart(restart_info)?;
+        let mut child = self.execute_restart(restart_info)?;
         let pid = child.id();
 
-        // Detach the child process to prevent zombie accumulation
-        // When the Child handle is forgotten, the process runs independently
-        // and won't become a zombie when it terminates
-        std::mem::forget(child);
+        // Spawn a background thread to reap the child when it exits, preventing zombies.
+        // Without this, the child would remain in the process table as a defunct/zombie
+        // entry until port-kill itself exits — problematic in long-running modes like --guard.
+        thread::spawn(move || {
+            let _ = child.wait();
+        });
+
+        if let Some(info) = self.restart_info.get_mut(&port) {
+            info.last_restarted = chrono::Utc::now();
+        }
+        let _ = self.save();
 
         Ok(pid)
     }
