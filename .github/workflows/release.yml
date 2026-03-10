@@ -8,6 +8,12 @@ on:
 permissions:
   contents: write
 
+env:
+  # Ensure release and uploads target this repo (avoids 404 when workflow runs in fork/cross-repo)
+  RELEASE_REPO: ${{ github.repository }}
+  # Use short tag name (e.g. v0.5.38); ref_name is correct for tag push, but strip refs/tags/ if ever passed
+  RELEASE_TAG: ${{ github.ref_name }}
+
 jobs:
   create-release:
     name: Create GitHub Release
@@ -16,7 +22,8 @@ jobs:
       - name: Create (or update) release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          repository: ${{ env.RELEASE_REPO }}
           draft: false
           generate_release_notes: true
         env:
@@ -86,7 +93,8 @@ jobs:
       - name: Upload assets to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          repository: ${{ env.RELEASE_REPO }}
           draft: false
           files: |
             ${{ env.ASSET_MAIN }}
