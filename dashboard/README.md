@@ -23,37 +23,26 @@ A modern web dashboard for monitoring and managing development processes and por
 
 ## Installation
 
-1. **Navigate to the dashboard directory:**
+1. **From the project root, build the Port Kill binary:**
    ```bash
-   cd dashboard
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Build the Port Kill Rust application:**
-   ```bash
-   # From the parent directory
-   cd ..
    cargo build --release
    ```
 
-4. **Start the development server:**
+2. **Navigate to the dashboard directory and install dependencies:**
+   ```bash
+   cd dashboard
+   npm install
+   ```
+
+3. **Start the dashboard development server:**
    ```bash
    npm run dev
    ```
 
-5. **Start the Rust backend:**
-   ```bash
-   # From the parent directory
-   cd ..
-   cargo run --release
-   ```
-
-6. **Open your browser:**
+4. **Open your browser:**
    Navigate to `http://localhost:3002`
+
+> The dashboard directly executes `port-kill-console`; you do not need to run `cargo run --release` in a separate terminal.
 
 ## Configuration
 
@@ -65,7 +54,7 @@ Create a `.env` file in the dashboard root:
 
 ```env
 # Port Kill binary path (optional, will auto-detect)
-PORT_KILL_BINARY_PATH=./target/release/port-kill-console
+PORT_KILL_BINARY_PATH=../target/release/port-kill-console
 
 # API base URL (optional)
 API_BASE=http://localhost:3001/api

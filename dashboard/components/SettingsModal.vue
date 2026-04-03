@@ -28,11 +28,11 @@
                     id="ports"
                     v-model="localConfig.ports"
                     type="text"
-                    placeholder="3000-6000"
+                    placeholder="2000-9000"
                     class="mt-2 block w-full px-4 py-3 text-sm bg-transparent border border-gray-500/10 rounded-xl text-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none transition-all duration-200 hover:border-gray-500/30"
                   />
                   <p class="mt-1 text-xs text-gray-500">
-                    Port range to monitor (e.g., 3000-6000 or specific ports: 3000,8000,8080)
+                    Port range to monitor (e.g., 2000-9000 or specific ports: 3000,8000,8080)
                   </p>
                 </div>
 
@@ -45,7 +45,7 @@
                     id="ignorePorts"
                     v-model="localConfig.ignorePorts"
                     type="text"
-                    placeholder="5353,5000,7000"
+                    placeholder="5353"
                     class="mt-2 block w-full px-4 py-3 text-sm bg-transparent border border-gray-500/10 rounded-xl text-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none transition-all duration-200 hover:border-gray-500/30"
                   />
                   <p class="mt-1 text-xs text-gray-500">

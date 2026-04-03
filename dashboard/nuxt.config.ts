@@ -18,7 +18,7 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     // Private keys (only available on server-side)
-    portKillBinaryPath: process.env.PORT_KILL_BINARY_PATH || '/Users/dantelex/port-kill/target/release/port-kill-console',
+    portKillBinaryPath: process.env.PORT_KILL_BINARY_PATH || '../target/release/port-kill-console',
     remoteHost: process.env.REMOTE_HOST || '',
     remoteMode: process.env.REMOTE_MODE === 'true',
     

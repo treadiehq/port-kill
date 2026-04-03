@@ -170,9 +170,9 @@ const isAutoRefreshEnabled = ref(true)
 
 // Settings
 const settings = ref({
-  ports: '3000,3001,3002,3003,3004,4000,9000,9001',
-  ignorePorts: '5353,5000,7000',
-  ignoreProcesses: 'Chrome,ControlCe,rapportd',
+  ports: '2000-9000',
+  ignorePorts: '5353',
+  ignoreProcesses: '',
   docker: true,
   verbose: true,
   refreshInterval: 10000,
@@ -249,7 +249,7 @@ const refreshData = async (showLoading = true) => {
         verbose: settings.value.verbose,
         performance: true,
         showContext: true,
-        smartFilter: true,
+        smartFilter: false,
         remoteMode: settings.value.remoteMode,
         remoteHost: settings.value.remoteHost
       }
@@ -288,12 +288,16 @@ const killAllProcesses = async () => {
       await $fetch('/api/processes/kill-all', {
         method: 'POST',
         query: {
-          ports: '3000,3001,3002,3003,3004,4000,8000,9000,9001',
-          docker: true,
+          ports: settings.value.ports,
+          ignorePorts: settings.value.ignorePorts,
+          ignoreProcesses: settings.value.ignoreProcesses,
+          docker: settings.value.docker,
           performance: true,
           showContext: true,
-          smartFilter: true,
-          verbose: true
+          smartFilter: false,
+          verbose: settings.value.verbose,
+          remoteMode: settings.value.remoteMode,
+          remoteHost: settings.value.remoteHost
         }
       })
       const previousCount = processes.value.length

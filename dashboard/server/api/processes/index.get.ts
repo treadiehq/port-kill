@@ -11,9 +11,9 @@ export default defineEventHandler(async (event) => {
   try {
     // Get query parameters
     const query = getQuery(event)
-    const ports = query.ports || '3000,3001,3002,4000,9000,9001'
-    const ignorePorts = query.ignorePorts || '5353,5000,7000'
-    const ignoreProcesses = query.ignoreProcesses || 'Chrome,ControlCe,rapportd'
+    const ports = query.ports || '2000-9000'
+    const ignorePorts = query.ignorePorts || '5353'
+    const ignoreProcesses = query.ignoreProcesses || ''
     const ignorePatterns = query.ignorePatterns || ''
     const ignoreGroups = query.ignoreGroups || ''
     const onlyGroups = query.onlyGroups || ''
@@ -88,6 +88,7 @@ function findPortKillBinary(defaultPath: string): string | null {
     '../target/debug/port-kill-console.exe',
     '/usr/local/bin/port-kill-console',
     '/opt/homebrew/bin/port-kill-console',
+    join(process.env.HOME || '', '.local', 'bin', 'port-kill-console'),
     'C:\\Program Files\\port-kill\\port-kill-console.exe',
     join(process.env.USERPROFILE || '', 'AppData', 'Local', 'port-kill', 'port-kill-console.exe')
   ]

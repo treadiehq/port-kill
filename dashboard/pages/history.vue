@@ -841,9 +841,9 @@ const processHistoryRef = ref(null)
 
 // Settings
 const settings = ref({
-  ports: '3000,3001,3002,3003,3004,4000,9000,9001',
-  ignorePorts: '5353,5000,7000',
-  ignoreProcesses: 'Chrome,ControlCe,rapportd',
+  ports: '2000-9000',
+  ignorePorts: '5353',
+  ignoreProcesses: '',
   docker: true,
   verbose: true,
   refreshInterval: 10000,

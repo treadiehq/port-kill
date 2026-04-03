@@ -40,6 +40,8 @@ function findPortKillBinary(): string | null {
     join(process.cwd(), '..', 'target', 'release', 'port-kill-console.exe'),
     '/usr/local/bin/port-kill-console',
     '/opt/port-kill/port-kill-console',
+    '/opt/homebrew/bin/port-kill-console',
+    join(process.env.HOME || '', '.local', 'bin', 'port-kill-console'),
   ]
   
   for (const path of commonPaths) {

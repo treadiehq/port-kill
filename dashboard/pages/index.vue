@@ -260,9 +260,9 @@ const showSettings = ref(false)
 const isAutoRefreshEnabled = ref(true)
 const systemResourcesRef = ref(null)
 const settings = ref({
-  ports: '3000,3001,3002,3003,3004,4000,9000,9001',
-  ignorePorts: '5353,5000,7000',
-  ignoreProcesses: 'Chrome,ControlCe,rapportd',
+  ports: '2000-9000',
+  ignorePorts: '5353',
+  ignoreProcesses: '',
   docker: true,
   verbose: true,
   refreshInterval: 10000,
@@ -392,12 +392,12 @@ const { data: processesData, error: processesError, pending: processesPending, r
   default: () => ({ processes: [] }),
   immediate: true, // Ensure immediate fetch
   query: {
-    ports: '3000,3001,3002,3003,3004,4000,9000,9001',
+    ports: '2000-9000',
     docker: true,
     verbose: true,
     performance: true,
     showContext: true,
-    smartFilter: true,
+    smartFilter: false,
     remoteMode: false,
     remoteHost: ''
   }
@@ -441,7 +441,7 @@ const refreshData = async (showLoading = true) => {
         verbose: settings.value.verbose,
         performance: true,
         showContext: true,
-        smartFilter: true,
+        smartFilter: false,
         remoteMode: settings.value.remoteMode,
         remoteHost: settings.value.remoteHost
       }
@@ -497,12 +497,16 @@ const killAllProcesses = async () => {
       await $fetch('/api/processes/kill-all', { 
         method: 'POST',
         query: {
-          ports: '3000,3001,3002,3003,3004,4000,9000,9001',
-          docker: true,
-          verbose: true,
+          ports: settings.value.ports,
+          ignorePorts: settings.value.ignorePorts,
+          ignoreProcesses: settings.value.ignoreProcesses,
+          docker: settings.value.docker,
+          verbose: settings.value.verbose,
           performance: true,
           showContext: true,
-          smartFilter: true
+          smartFilter: false,
+          remoteMode: settings.value.remoteMode,
+          remoteHost: settings.value.remoteHost
         }
       })
       

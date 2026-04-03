@@ -54,6 +54,7 @@ function findPortKillBinary(defaultPath: string): string | null {
     '../target/debug/port-kill-console.exe',
     '/usr/local/bin/port-kill-console',
     '/opt/homebrew/bin/port-kill-console',
+    join(process.env.HOME || '', '.local', 'bin', 'port-kill-console'),
     'C:\\Program Files\\port-kill\\port-kill-console.exe',
     join(process.env.USERPROFILE || '', 'AppData', 'Local', 'port-kill', 'port-kill-console.exe')
   ]
